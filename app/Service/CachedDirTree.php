@@ -11,10 +11,13 @@ use RecursiveIteratorIterator;
 
 class CachedDirTree
 {
+    private const MAX_FILES_TO_CACHE = 50000; // Limit to prevent memory exhaustion
+    private const MAX_DIRS_TO_TRACK = 10000; // Limit directory tracking
     private array $files = [];
     private array $dirMTimes = [];
     private string $cacheKey;
     private string $hashKey;
+    private bool $limitReached = false; // Track if we hit the limit
 
     public function __construct(private string $baseDir) {
         $baseDirHash = md5($baseDir);
@@ -197,6 +200,12 @@ class CachedDirTree
             $iterator = $this->getFilteredIterator($dirPath);
 
             foreach ($iterator as $file) {
+                // Stop if we've hit the limits
+                if (count($this->files) >= self::MAX_FILES_TO_CACHE || count($this->dirMTimes) >= self::MAX_DIRS_TO_TRACK) {
+                    $this->limitReached = true;
+                    break;
+                }
+
                 if ($file->isFile()) {
                     $path = $file->getPathname();
                     $size = $file->getSize();
@@ -226,6 +235,12 @@ class CachedDirTree
         $iterator = $this->getFilteredIterator($this->baseDir);
 
         foreach ($iterator as $file) {
+            // Stop if we've hit the limits
+            if (count($this->files) >= self::MAX_FILES_TO_CACHE || count($this->dirMTimes) >= self::MAX_DIRS_TO_TRACK) {
+                $this->limitReached = true;
+                break;
+            }
+
             if ($file->isFile()) {
                 $path = $file->getPathname();
                 $size = $file->getSize();
@@ -248,6 +263,18 @@ class CachedDirTree
     }
 
     private function saveCache(): void {
+        // Don't cache if we hit the limit or if arrays are too large
+        if ($this->limitReached) {
+            return;
+        }
+
+        // Estimate memory usage and skip caching if too large
+        // Each file entry is roughly 200 bytes (path + metadata)
+        $estimatedMemory = (count($this->files) * 200) + (count($this->dirMTimes) * 150);
+        if ($estimatedMemory > 50 * 1024 * 1024) { // 50MB limit
+            return; // Skip caching to avoid memory exhaustion
+        }
+
         // Store indefinitely - we manually invalidate when needed
         // Or use a TTL: Cache::put($key, $value, now()->addHours(24));
         Cache::forever($this->cacheKey, $this->files);

@@ -22,19 +22,21 @@ class FileFind
     }
 
     /**
-     * Search for files by filename/path pattern
+     * Search for files by filename/path pattern with result limit
      *
      * Examples:
      * - baseDir: "/var/www/project"
      * - query: "Controller" - finds files with "Controller" in path
      * - query: "*Service.php" - finds files ending with Service.php
      * - extension: "php" - filter to .php files only
+     * - maxResults: 100 - maximum number of files to return (default: 100)
      */
     #[McpTool(name: 'file_find')]
     public function fileFind(
         string $baseDir,
         string $query,
-        ?string $extension = null
+        ?string $extension = null,
+        ?int $maxResults = 100
     ): array
     {
         if (!$this->fileToolService->isPathAllowed($this->allowedPaths, $baseDir)) {
@@ -51,8 +53,13 @@ class FileFind
             throw new RuntimeException($results['error']);
         }
 
+        // Limit results to prevent huge responses
+        $totalCount = count($results);
+        $results = array_slice($results, 0, $maxResults);
+
         return [
-            'count' => count($results),
+            'total_count' => $totalCount,
+            'returned_count' => count($results),
             'base_dir' => $baseDir,
             'files' => $results,
         ];
