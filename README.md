@@ -1,3 +1,11 @@
+## Features
+
+Several simple mcp tools to improve LLM interactions about codebases:
+  * file read
+  * optimized quick file search for filename + search in contents
+  * file insert/replace/delete lines
+  * database memory: save, update, list
+
 ## Quick Start
 
 Use local php (I use php 8.3).
