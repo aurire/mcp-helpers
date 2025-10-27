@@ -1,0 +1,1 @@
+/Users/aurimasrekstys/mine/tools/mcp-helpers/database/test_new_file.txt
