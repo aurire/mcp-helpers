@@ -262,8 +262,11 @@ class FileWriteService
 
     /**
      * Write file atomically using temp file + rename
+     * 
+     * This method is public so it can be reused by other services
+     * like FileRewriteService that need atomic file writes.
      */
-    private function writeFileAtomically(string $pathAndFilename, string $content): void
+    public function writeFileAtomically(string $pathAndFilename, string $content): void
     {
         $directory = dirname($pathAndFilename);
         $basename = basename($pathAndFilename);

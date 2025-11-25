@@ -66,6 +66,9 @@ class FileFind
     }
 
     /**
+     *
+     * Note: Results are automatically truncated to stay under 1MB response limit.
+     * If truncation occurs, reduce contextLines (to 0-1) or use more specific search terms.
      * Search for content inside files
      *
      * Examples:
@@ -75,7 +78,7 @@ class FileFind
      * - extension: "php" - only search .php files
      * - caseInsensitive: true - ignore case when searching
      * - contextLines: 2 - show 2 lines before/after each match
-     * - maxResults: 50 - maximum number of files to return
+     * - maxResults: 50 - maximum number of files to return (default: 50, max recommended: 30)
      */
     #[McpTool(name: 'file_search_content')]
     public function searchContent(

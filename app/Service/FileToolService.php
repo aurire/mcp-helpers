@@ -254,15 +254,26 @@ class FileToolService
                 'xxh3',
                 $pathAndFilename . ':' . filesize($pathAndFilename) . ':' . filemtime($pathAndFilename)),
         ];
-        if (str_ends_with($pathAndFilename, '.php')) {
-            $visitor = new ClassUsageCollector();
-            $ast = (new ParserFactory())->createForNewestSupportedVersion()->parse($contents);
-            $traverser = new NodeTraverser();
-            $traverser->addVisitor($visitor);
-            $traverser->traverse($ast);
-
-            $result['used_classes'] = $visitor->getUsedClasses();
+        // Attempt to parse PHP files for class usage
+        if (str_ends_with($pathAndFilename, '.php') && $contents !== '') {
+            try {
+                $visitor = new ClassUsageCollector();
+                $ast = (new ParserFactory())->createForNewestSupportedVersion()->parse($contents);
+                $traverser = new NodeTraverser();
+                $traverser->addVisitor($visitor);
+                $traverser->traverse($ast);
+                
+                $result['used_classes'] = $visitor->getUsedClasses();
+            } catch (\PhpParser\Error $e) {
+                // PHP syntax error - file is corrupted/invalid
+                $result['php_syntax_error'] = [
+                    'message' => $e->getMessage(),
+                    'line' => $e->getStartLine(),
+                    'warning' => '⚠️  PHP SYNTAX ERROR: This file has invalid PHP syntax and cannot be parsed'
+                ];
+            }
         }
+
 
         return $result;
     }

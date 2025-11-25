@@ -3,7 +3,7 @@
 Several simple mcp tools to improve LLM interactions about codebases:
   * file read
   * optimized quick file search for filename + search in contents
-  * file insert/replace/delete lines
+  * file insert/replace/delete lines, file rewrite (complete replacement)
   * database memory: save, update, list
 
 ## Quick Start
@@ -17,7 +17,7 @@ ALLOWED_PATHS_FOR_MCP_TOOLS=/Users/myusername/mcp-helpers;/Users/myusername/apps
 
 To add to claude:
 
-path: `~/Library/Application`
+path: `~/Library/Application\ Support\Claude`
 file: `claude_desktop_config.json`
 contents:
 ```
