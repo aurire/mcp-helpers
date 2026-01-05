@@ -6,8 +6,11 @@ namespace App\Mcp\Tools\File;
 
 use App\Service\FileFindService;
 use App\Service\FileToolService;
+use App\Service\ContentIndexing\IndexSearchService;
+use App\Service\ContentIndexing\IndexBuilderService;
 use PhpMcp\Server\Attributes\McpTool;
 use RuntimeException;
+use Illuminate\Support\Facades\Log;
 
 class FileFind
 {
@@ -99,6 +102,53 @@ class FileFind
             throw new RuntimeException("Base directory not found: {$baseDir}");
         }
 
+        // Auto-sync index: Check for changed files and update index if needed
+        // This ensures searches use up-to-date index data
+        if ($filePattern === null) {
+            try {
+                $indexBuilder = app(IndexBuilderService::class);
+                
+                // Find files that have changed since last index
+                $changedFiles = $indexBuilder->findChangedFiles($baseDir);
+                
+                if (!empty($changedFiles)) {
+                    Log::info('Auto-syncing index: found changed files', [
+                        'base_dir' => $baseDir,
+                        'changed_count' => count($changedFiles)
+                    ]);
+                    
+                    // Sync changed files to index
+                    $indexBuilder->syncChangedFiles($baseDir);
+                }
+            } catch (\Exception $e) {
+                // Don't fail the search if auto-sync fails
+                Log::warning('Auto-sync failed, continuing with existing index', [
+                    'error' => $e->getMessage(),
+                    'base_dir' => $baseDir
+                ]);
+            }
+        }
+        
+        // Try indexed search first (if available and no file pattern specified)
+        // File pattern filtering is not supported in index yet
+        if ($filePattern === null) {
+            try {
+                $indexSearch = app(IndexSearchService::class);
+                $results = $indexSearch->search($contentQuery, $baseDir, $extension, $maxResults);
+                
+                if (!empty($results['results'])) {
+                    // Transform to expected format
+                    return $this->formatIndexedResults($results);
+                }
+            } catch (\Exception $e) {
+                Log::warning('Indexed search failed, using fallback', [
+                    'error' => $e->getMessage(),
+                    'query' => $contentQuery
+                ]);
+            }
+        }
+        
+        // Fallback to traditional search
         $results = $this->fileFindService->searchInFiles(
             $baseDir,
             $contentQuery,
@@ -114,5 +164,54 @@ class FileFind
         }
 
         return $results;
+    }
+
+    private function formatIndexedResults(array $indexResults): array
+    {
+        $formatted = [];
+        
+        foreach ($indexResults['results'] as $result) {
+            $matches = [];
+            
+            foreach ($result['matches'] as $match) {
+                $matches[] = [
+                    'line' => $match['line'],
+                    'content' => $match['context'],
+                    'context' => [
+                        [
+                            'line' => $match['line'],
+                            'content' => $match['context'],
+                            'match' => true
+                        ]
+                    ]
+                ];
+            }
+            
+            $formatted[] = [
+                'path' => $result['path'],
+                'match_count' => count($matches),
+                'matches' => $matches,
+            ];
+        }
+        
+        return [
+            'count' => count($formatted),
+            'content_query' => implode(' ', $indexResults['query_tokens']),
+            'results' => $formatted,
+            'response_size' => $this->formatBytes(strlen(json_encode($formatted))),
+            'truncated' => false,
+            'message' => 'Results from indexed search (auto-synced, faster)',
+        ];
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB'];
+        $i = 0;
+        while ($bytes >= 1024 && $i < 2) {
+            $bytes /= 1024;
+            $i++;
+        }
+        return round($bytes, 2) . ' ' . $units[$i];
     }
 }

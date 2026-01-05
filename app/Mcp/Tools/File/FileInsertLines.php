@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\File;
 
+use App\Service\ContentIndexing\AutoIndexHelper;
 use App\Service\FileOperationResponseBuilder;
 use App\Service\FileToolService;
 use App\Service\FileVersionService;
@@ -132,6 +133,9 @@ class FileInsertLines
                 ]
             );
         }
+
+        // Auto-index the modified file
+        AutoIndexHelper::autoIndex($pathAndFilename);
 
         // Build enhanced response
         return $this->responseBuilder->buildInsertResponse(

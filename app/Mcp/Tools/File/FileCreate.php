@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\File;
 
+use App\Service\ContentIndexing\AutoIndexHelper;
 use App\Service\FileToolService;
 use PhpMcp\Server\Attributes\McpTool;
 use RuntimeException;
@@ -69,6 +70,9 @@ class FileCreate
 
         // Read back the created file with full metadata
         $newFile = $this->fileToolService->readFileAndPrepareResults($pathAndFilename);
+
+        // Auto-index the created file
+        AutoIndexHelper::autoIndex($pathAndFilename);
 
         return [
             'success' => true,

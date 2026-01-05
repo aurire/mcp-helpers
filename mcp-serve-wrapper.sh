@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-MAX_RESTARTS=100
+MAX_RESTARTS=5
 RESTART_COUNT=0
 PHP_BIN="/opt/homebrew/bin/php"
 ARTISAN_PATH="/Users/aurimasrekstys/mine/tools/mcp-helpers/artisan"
@@ -22,8 +22,8 @@ while true; do
         echo "[$(date)] MCP server crashed with exit code $EXIT_CODE. Restarting in 2 seconds..." >&2
         sleep 2
     else
-        echo "[$(date)] MCP server exited cleanly. Restarting in 0.5 seconds..." >&2
-        sleep 0.5
+        rem echo "[$(date)] MCP server exited cleanly. Restarting in 0.5 seconds..." >&2
+        rem sleep 0.5
     fi
     
     RESTART_COUNT=$((RESTART_COUNT + 1))

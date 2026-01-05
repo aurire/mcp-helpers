@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Service\ContentIndexing\AutoIndexHelper;
 use RuntimeException;
 
 class FileWriteService
@@ -93,6 +94,9 @@ class FileWriteService
         // Calculate new checksums
         $newChecksum = hash('sha256', $newContents);
         $newQuickHash = $this->calculateQuickHashFromContent($pathAndFilename, $newContents);
+        
+        // Auto-index file after write (non-blocking)
+        app(AutoIndexHelper::class)->indexFileAfterWrite($pathAndFilename);
 
         return [
             'success' => true,
@@ -150,6 +154,9 @@ class FileWriteService
 
         $newChecksum = hash('sha256', $newContents);
         $newQuickHash = $this->calculateQuickHashFromContent($pathAndFilename, $newContents);
+        
+        // Auto-index file after write (non-blocking)
+        app(AutoIndexHelper::class)->indexFileAfterWrite($pathAndFilename);
 
         return [
             'success' => true,

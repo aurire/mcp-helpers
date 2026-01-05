@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools\File;
 
+use App\Service\ContentIndexing\AutoIndexHelper;
 use App\Service\FileOperationResponseBuilder;
 use App\Service\FileRewriteService;
 use App\Service\FileToolService;
@@ -111,6 +112,9 @@ class FileRewrite
         } else {
             $versionId = null;
         }
+
+        // Auto-index the rewritten file
+        AutoIndexHelper::autoIndex($pathAndFilename);
 
         // Build response with version ID
         return [
