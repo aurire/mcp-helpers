@@ -80,6 +80,54 @@ class AutoIndexHelper
             return false;
         }
     }
+
+    /**
+     * Static helper for auto-indexing a file (smart - checks hash first)
+     * Only reindexes if the file hash has changed since last index
+     * 
+     * This is the main method that should be called after file writes
+     * It's efficient: ~1ms if unchanged, ~50ms if needs reindex
+     */
+    public static function autoIndex(string $filePath): void
+    {
+        try {
+            $helper = app(self::class);
+            
+            if (!$helper->shouldIndex($filePath)) {
+                return;
+            }
+            
+            // Calculate current file hash
+            $currentHash = $helper->calculateIndexHash($filePath);
+            
+            // Check if already indexed with current hash
+            $indexed = DB::table('indexed_files')
+                ->where('file_path', $filePath)
+                ->first();
+            
+            // Only reindex if hash changed or not indexed yet
+            if (!$indexed || $indexed->file_hash !== $currentHash) {
+                $helper->indexBuilder->indexFile($filePath);
+                
+                Log::debug('Auto-indexed file (hash changed)', [
+                    'file' => basename($filePath),
+                    'old_hash' => $indexed->file_hash ?? 'not_indexed',
+                    'new_hash' => $currentHash
+                ]);
+            } else {
+                // Hash unchanged - skip reindex
+                Log::debug('Skipped auto-index (hash unchanged)', [
+                    'file' => basename($filePath)
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Never fail operations due to indexing
+            Log::warning('Auto-index failed', [
+                'file' => $filePath,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
     
     /**
      * Calculate the same hash that IndexBuilderService uses

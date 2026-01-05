@@ -102,32 +102,6 @@ class FileFind
             throw new RuntimeException("Base directory not found: {$baseDir}");
         }
 
-        // Auto-sync index: Check for changed files and update index if needed
-        // This ensures searches use up-to-date index data
-        if ($filePattern === null) {
-            try {
-                $indexBuilder = app(IndexBuilderService::class);
-                
-                // Find files that have changed since last index
-                $changedFiles = $indexBuilder->findChangedFiles($baseDir);
-                
-                if (!empty($changedFiles)) {
-                    Log::info('Auto-syncing index: found changed files', [
-                        'base_dir' => $baseDir,
-                        'changed_count' => count($changedFiles)
-                    ]);
-                    
-                    // Sync changed files to index
-                    $indexBuilder->syncChangedFiles($baseDir);
-                }
-            } catch (\Exception $e) {
-                // Don't fail the search if auto-sync fails
-                Log::warning('Auto-sync failed, continuing with existing index', [
-                    'error' => $e->getMessage(),
-                    'base_dir' => $baseDir
-                ]);
-            }
-        }
         
         // Try indexed search first (if available and no file pattern specified)
         // File pattern filtering is not supported in index yet
@@ -200,7 +174,7 @@ class FileFind
             'results' => $formatted,
             'response_size' => $this->formatBytes(strlen(json_encode($formatted))),
             'truncated' => false,
-            'message' => 'Results from indexed search (auto-synced, faster)',
+            'message' => 'Results from indexed search (faster)',
         ];
     }
 

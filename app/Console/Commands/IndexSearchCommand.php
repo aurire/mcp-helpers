@@ -31,7 +31,7 @@ class IndexSearchCommand extends Command
         
         foreach ($results['results'] as $result) {
             $this->line("<fg=green>{$result['path']}</>");
-            $this->line("  Matches: {$result['match_count']} tokens, {$result['total_occurrences']} occurrences");
+            $this->line("  Matching lines: {$result['match_count']}");
             
             foreach ($result['matches'] as $match) {
                 $tokens = implode(', ', $match['tokens']);

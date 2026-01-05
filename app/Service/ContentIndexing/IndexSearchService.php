@@ -26,18 +26,16 @@ class IndexSearchService
             ];
         }
         
-        // Build search query
+        // Find lines where ALL tokens appear together (same-line AND logic)
         $builder = DB::table('content_index')
             ->select([
                 'file_path',
-                DB::raw('COUNT(DISTINCT token) as unique_matches'),
-                DB::raw('COUNT(*) as total_occurrences'),
+                'line_number',
+                DB::raw('COUNT(DISTINCT token) as tokens_on_line'),
             ])
             ->whereIn('token', $queryTokens)
-            ->groupBy('file_path')
-            ->orderByDesc('unique_matches')
-            ->orderByDesc('total_occurrences')
-            ->limit($maxResults);
+            ->groupBy('file_path', 'line_number')
+            ->having('tokens_on_line', '=', count($queryTokens)); // All tokens must be on same line
         
         if ($baseDir) {
             $builder->where('file_path', 'LIKE', rtrim($baseDir, '/') . '/%');
@@ -47,7 +45,31 @@ class IndexSearchService
             $builder->where('file_path', 'LIKE', '%.' . $extension);
         }
         
-        $results = $builder->get();
+        $lineMatches = $builder->get();
+        
+        // Group by file and count matching lines
+        $fileGroups = [];
+        foreach ($lineMatches as $match) {
+            if (!isset($fileGroups[$match->file_path])) {
+                $fileGroups[$match->file_path] = [];
+            }
+            $fileGroups[$match->file_path][] = $match->line_number;
+        }
+        
+        // Sort files by number of matching lines (most relevant first)
+        uasort($fileGroups, fn($a, $b) => count($b) - count($a));
+        
+        // Limit to maxResults files
+        $fileGroups = array_slice($fileGroups, 0, $maxResults, true);
+        
+        // Build results array
+        $results = [];
+        foreach ($fileGroups as $filePath => $lines) {
+            $results[] = (object)[
+                'file_path' => $filePath,
+                'matching_lines' => count($lines),
+            ];
+        }
         
         // Enrich with actual matches
         $enrichedResults = [];
@@ -56,8 +78,7 @@ class IndexSearchService
             
             $enrichedResults[] = [
                 'path' => $result->file_path,
-                'match_count' => $result->unique_matches,
-                'total_occurrences' => $result->total_occurrences,
+                'match_count' => $result->matching_lines,
                 'matches' => $matches,
             ];
         }
@@ -71,27 +92,34 @@ class IndexSearchService
     
     private function getMatchDetailsForFile(string $filePath, array $tokens): array
     {
+        // Find lines where ALL tokens appear (same-line AND)
         $matches = DB::table('content_index')
             ->select(['line_number', 'original_token', 'context', 'token_type'])
             ->where('file_path', $filePath)
             ->whereIn('token', $tokens)
             ->orderBy('line_number')
-            ->limit(10)
             ->get();
         
-        // Group by line number to avoid duplicates
+        // Group by line number
         $lineGroups = [];
         foreach ($matches as $match) {
             $lineGroups[$match->line_number][] = $match;
         }
         
+        // Filter to only lines with ALL tokens
         $result = [];
         foreach ($lineGroups as $lineNum => $lineMatches) {
-            $result[] = [
-                'line' => $lineNum,
-                'tokens' => array_map(fn($m) => $m->original_token, $lineMatches),
-                'context' => $lineMatches[0]->context,
-            ];
+            // Count distinct tokens on this line
+            $distinctTokens = array_unique(array_map(fn($m) => $m->original_token, $lineMatches));
+            
+            // Only include if ALL query tokens are present
+            if (count($distinctTokens) === count($tokens)) {
+                $result[] = [
+                    'line' => $lineNum,
+                    'tokens' => $distinctTokens,
+                    'context' => $lineMatches[0]->context,
+                ];
+            }
         }
         
         return $result;
