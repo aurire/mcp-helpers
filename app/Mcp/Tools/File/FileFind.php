@@ -69,10 +69,17 @@ class FileFind
     }
 
     /**
+     * Search for content inside files
      *
      * Note: Results are automatically truncated to stay under 1MB response limit.
      * If truncation occurs, reduce contextLines (to 0-1) or use more specific search terms.
-     * Search for content inside files
+     *
+     * Search modes:
+     * - "indexed_only" (default): Fast search using index only. Returns empty if not found in index.
+     *   Best for quick searches where you can retry with exhaustive if needed.
+     * - "exhaustive": Guaranteed complete search. Uses grep fallback if index doesn't find results.
+     *   Slower but ensures nothing is missed. Use when you need to be absolutely certain.
+     * - "auto": Legacy behavior - tries index, always falls back to grep on empty results (deprecated).
      *
      * Examples:
      * - baseDir: "/var/www/project"
@@ -81,7 +88,8 @@ class FileFind
      * - extension: "php" - only search .php files
      * - caseInsensitive: true - ignore case when searching
      * - contextLines: 2 - show 2 lines before/after each match
-     * - maxResults: 50 - maximum number of files to return (default: 50, max recommended: 30)
+     * - maxResults: 50 - maximum number of files to return (default: 50)
+     * - searchMode: "indexed_only" - fast indexed search (default), "exhaustive" for complete search, "auto" for legacy
      */
     #[McpTool(name: 'file_search_content')]
     public function searchContent(
@@ -91,7 +99,8 @@ class FileFind
         ?string $extension = null,
         bool $caseInsensitive = true,
         ?int $contextLines = 2,
-        ?int $maxResults = 50
+        ?int $maxResults = 50,
+        string $searchMode = 'indexed_only'
     ): array
     {
         if (!$this->fileToolService->isPathAllowed($this->allowedPaths, $baseDir)) {
@@ -102,27 +111,66 @@ class FileFind
             throw new RuntimeException("Base directory not found: {$baseDir}");
         }
 
+        // Validate search mode
+        $validModes = ['indexed_only', 'exhaustive', 'auto'];
+        if (!in_array($searchMode, $validModes, true)) {
+            throw new RuntimeException("Invalid searchMode. Must be one of: " . implode(', ', $validModes));
+        }
+
+        $indexSearchAttempted = false;
+        $indexSearchFailed = false;
+        $indexSearchEmpty = false;
         
-        // Try indexed search first (if available and no file pattern specified)
-        // File pattern filtering is not supported in index yet
-        if ($filePattern === null) {
+        // Try indexed search if no file pattern specified (index doesn't support file patterns yet)
+        if ($filePattern === null && $searchMode !== 'auto') {
             try {
                 $indexSearch = app(IndexSearchService::class);
                 $results = $indexSearch->search($contentQuery, $baseDir, $extension, $maxResults);
                 
+                $indexSearchAttempted = true;
+                
                 if (!empty($results['results'])) {
-                    // Transform to expected format
-                    return $this->formatIndexedResults($results);
+                    // Found results in index
+                    return $this->formatIndexedResults($results, 'indexed_only');
                 }
+                
+                // Index search returned empty
+                $indexSearchEmpty = true;
+                
+                // For indexed_only mode, return empty results with clear message
+                if ($searchMode === 'indexed_only') {
+                    return [
+                        'count' => 0,
+                        'content_query' => $contentQuery,
+                        'results' => [],
+                        'search_method' => 'indexed_only',
+                        'message' => 'No results found in indexed search. Use searchMode="exhaustive" for complete filesystem search.',
+                    ];
+                }
+                
             } catch (\Exception $e) {
-                Log::warning('Indexed search failed, using fallback', [
+                $indexSearchAttempted = true;
+                $indexSearchFailed = true;
+                
+                Log::warning('Indexed search failed', [
                     'error' => $e->getMessage(),
                     'query' => $contentQuery
                 ]);
+                
+                // For indexed_only mode, report the failure
+                if ($searchMode === 'indexed_only') {
+                    throw new RuntimeException(
+                        "Indexed search failed: {$e->getMessage()}. Try searchMode=\"exhaustive\" for filesystem search."
+                    );
+                }
             }
         }
         
-        // Fallback to traditional search
+        // Fallback to traditional grep search for:
+        // - exhaustive mode (always)
+        // - auto mode (legacy behavior)
+        // - when filePattern is specified (not supported by index)
+        // - when indexed search failed (but not for indexed_only mode)
         $results = $this->fileFindService->searchInFiles(
             $baseDir,
             $contentQuery,
@@ -137,10 +185,24 @@ class FileFind
             throw new RuntimeException($results['error']);
         }
 
+        // Add metadata about search method
+        $results['search_method'] = 'grep';
+        
+        if ($indexSearchAttempted) {
+            if ($indexSearchFailed) {
+                $results['message'] = 'Used filesystem search (grep) because indexed search failed.';
+            } elseif ($indexSearchEmpty) {
+                $results['message'] = 'Used filesystem search (grep) because indexed search found no results.';
+            }
+        } else {
+            $reason = $filePattern !== null ? 'file pattern specified' : 'exhaustive mode requested';
+            $results['message'] = "Used filesystem search (grep) because {$reason}.";
+        }
+
         return $results;
     }
 
-    private function formatIndexedResults(array $indexResults): array
+    private function formatIndexedResults(array $indexResults, string $searchMethod): array
     {
         $formatted = [];
         
@@ -174,7 +236,8 @@ class FileFind
             'results' => $formatted,
             'response_size' => $this->formatBytes(strlen(json_encode($formatted))),
             'truncated' => false,
-            'message' => 'Results from indexed search (faster)',
+            'search_method' => $searchMethod,
+            'message' => 'Results from indexed search (fast, may not include all files)',
         ];
     }
 
