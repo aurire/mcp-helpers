@@ -77,9 +77,10 @@ class FileFind
      * Search modes:
      * - "indexed_only" (default): Fast search using index only. Returns empty if not found in index.
      *   Best for quick searches where you can retry with exhaustive if needed.
-     * - "exhaustive": Guaranteed complete search. Uses grep fallback if index doesn't find results.
-     *   Slower but ensures nothing is missed. Use when you need to be absolutely certain.
-     * - "auto": Legacy behavior - tries index, always falls back to grep on empty results (deprecated).
+     * - "exhaustive": Guaranteed complete search. Syncs changed files to index, then searches.
+     *   First run may be slow (full indexing), but subsequent runs are fast (incremental updates).
+     *   Use when you need to be absolutely certain nothing is missed.
+     * - "auto": Legacy behavior - tries index, falls back to grep on empty results (deprecated).
      *
      * Examples:
      * - baseDir: "/var/www/project"
@@ -120,6 +121,7 @@ class FileFind
         $indexSearchAttempted = false;
         $indexSearchFailed = false;
         $indexSearchEmpty = false;
+        $syncStats = null;
         
         // Try indexed search if no file pattern specified (index doesn't support file patterns yet)
         if ($filePattern === null && $searchMode !== 'auto') {
@@ -131,7 +133,7 @@ class FileFind
                 
                 if (!empty($results['results'])) {
                     // Found results in index
-                    return $this->formatIndexedResults($results, 'indexed_only');
+                    return $this->formatIndexedResults($results, 'indexed_only', $syncStats);
                 }
                 
                 // Index search returned empty
@@ -144,7 +146,34 @@ class FileFind
                         'content_query' => $contentQuery,
                         'results' => [],
                         'search_method' => 'indexed_only',
-                        'message' => 'No results found in indexed search. Use searchMode="exhaustive" for complete filesystem search.',
+                        'message' => 'No results found in indexed search. Use searchMode="exhaustive" to sync changed files and search again.',
+                    ];
+                }
+                
+                // For exhaustive mode: sync changed files and search again
+                if ($searchMode === 'exhaustive') {
+                    Log::info('Exhaustive search: syncing changed files', ['baseDir' => $baseDir]);
+                    
+                    $indexBuilder = app(IndexBuilderService::class);
+                    $syncStats = $indexBuilder->syncChangedFiles($baseDir);
+                    
+                    Log::info('Sync completed', $syncStats);
+                    
+                    // Search again after sync
+                    $results = $indexSearch->search($contentQuery, $baseDir, $extension, $maxResults);
+                    
+                    if (!empty($results['results'])) {
+                        return $this->formatIndexedResults($results, 'exhaustive_after_sync', $syncStats);
+                    }
+                    
+                    // Still no results after sync - genuinely not found
+                    return [
+                        'count' => 0,
+                        'content_query' => $contentQuery,
+                        'results' => [],
+                        'search_method' => 'exhaustive_after_sync',
+                        'sync_stats' => $syncStats,
+                        'message' => 'No results found after syncing changed files. Content genuinely does not exist.',
                     ];
                 }
                 
@@ -160,17 +189,16 @@ class FileFind
                 // For indexed_only mode, report the failure
                 if ($searchMode === 'indexed_only') {
                     throw new RuntimeException(
-                        "Indexed search failed: {$e->getMessage()}. Try searchMode=\"exhaustive\" for filesystem search."
+                        "Indexed search failed: {$e->getMessage()}. Try searchMode=\"exhaustive\" for complete search."
                     );
                 }
             }
         }
         
         // Fallback to traditional grep search for:
-        // - exhaustive mode (always)
         // - auto mode (legacy behavior)
         // - when filePattern is specified (not supported by index)
-        // - when indexed search failed (but not for indexed_only mode)
+        // - when indexed search failed in exhaustive mode
         $results = $this->fileFindService->searchInFiles(
             $baseDir,
             $contentQuery,
@@ -195,14 +223,14 @@ class FileFind
                 $results['message'] = 'Used filesystem search (grep) because indexed search found no results.';
             }
         } else {
-            $reason = $filePattern !== null ? 'file pattern specified' : 'exhaustive mode requested';
+            $reason = $filePattern !== null ? 'file pattern specified (not yet supported by index)' : 'auto mode (legacy)';
             $results['message'] = "Used filesystem search (grep) because {$reason}.";
         }
 
         return $results;
     }
 
-    private function formatIndexedResults(array $indexResults, string $searchMethod): array
+    private function formatIndexedResults(array $indexResults, string $searchMethod, ?array $syncStats = null): array
     {
         $formatted = [];
         
@@ -230,15 +258,32 @@ class FileFind
             ];
         }
         
-        return [
+        $response = [
             'count' => count($formatted),
             'content_query' => implode(' ', $indexResults['query_tokens']),
             'results' => $formatted,
             'response_size' => $this->formatBytes(strlen(json_encode($formatted))),
             'truncated' => false,
             'search_method' => $searchMethod,
-            'message' => 'Results from indexed search (fast, may not include all files)',
         ];
+        
+        // Add sync stats if available
+        if ($syncStats !== null) {
+            $response['sync_stats'] = $syncStats;
+        }
+        
+        // Customize message based on search method
+        if ($searchMethod === 'indexed_only') {
+            $response['message'] = 'Results from indexed search (fast, may not include recently changed files)';
+        } elseif ($searchMethod === 'exhaustive_after_sync') {
+            if ($syncStats && $syncStats['indexed'] > 0) {
+                $response['message'] = "Results after syncing {$syncStats['indexed']} changed file(s). Index is now up-to-date.";
+            } else {
+                $response['message'] = 'Results from up-to-date index (no files needed syncing).';
+            }
+        }
+        
+        return $response;
     }
 
     private function formatBytes(int $bytes): string
