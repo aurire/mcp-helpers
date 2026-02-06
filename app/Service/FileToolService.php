@@ -233,6 +233,22 @@ class FileToolService
             $mimeType !== 'application/x-httpd-php' &&
             $mimeType !== 'application/x-sh';
     }
+    
+    /**
+     * Calculate quick hash for a file based on path, size, and modification time
+     * This is used for optimistic locking to detect if a file has changed
+     */
+    public function calculateQuickHash(string $pathAndFilename): string
+    {
+        if (!file_exists($pathAndFilename)) {
+            throw new \RuntimeException("File does not exist: {$pathAndFilename}");
+        }
+        
+        return hash(
+            'xxh3',
+            $pathAndFilename . ':' . filesize($pathAndFilename) . ':' . filemtime($pathAndFilename)
+        );
+    }
     public function searchInFiles(array $files, string $contentQuery, bool $caseInsensitive, ?int $contextLines, ?int $maxResults)
     {
 

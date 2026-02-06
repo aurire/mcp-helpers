@@ -65,6 +65,7 @@ class FileFind
             'returned_count' => count($results),
             'base_dir' => $baseDir,
             'files' => $results,
+            'bulk_hint' => $totalCount >= 3 ? '💡 TIP: Use bulk_execute for multiple file operations. Example: bulk_execute(toolName: "file_read", operations: [["pathAndFilename" => "path1"], ["pathAndFilename" => "path2"]], parallel: true)' : null,
         ];
     }
 
@@ -226,6 +227,11 @@ class FileFind
             $reason = $filePattern !== null ? 'file pattern specified (not yet supported by index)' : 'auto mode (legacy)';
             $results['message'] = "Used filesystem search (grep) because {$reason}.";
         }
+        
+        // Add bulk hint if multiple files found
+        if (isset($results['count']) && $results['count'] >= 3) {
+            $results['bulk_hint'] = '💡 TIP: Found multiple files with matches. Use bulk_execute to read them all at once. Example: bulk_execute(toolName: "file_read", operations: [["pathAndFilename" => "path1"], ...], parallel: true)';
+        }
 
         return $results;
     }
@@ -265,6 +271,7 @@ class FileFind
             'response_size' => $this->formatBytes(strlen(json_encode($formatted))),
             'truncated' => false,
             'search_method' => $searchMethod,
+            'bulk_hint' => count($formatted) >= 3 ? '💡 TIP: Found multiple files with matches. Use bulk_execute to read them all at once. Example: bulk_execute(toolName: "file_read", operations: [["pathAndFilename" => "' . $formatted[0]['path'] . '"], ...], parallel: true)' : null,
         ];
         
         // Add sync stats if available

@@ -40,6 +40,25 @@ class AllowedDirectories
                     'exists' => is_dir($path),
                 ];
             }, $allowedPaths, array_keys($allowedPaths)),
+            'bulk_operations_available' => [
+                'info' => '💡 BULK OPERATIONS: Use bulk_execute tool for multiple file operations at once',
+                'performance' => 'Process 10+ operations in parallel (~0.008s vs ~0.030s sequential)',
+                'supported_tools' => [
+                    'file_create', 'file_read', 'file_delete', 'file_rename',
+                    'file_rewrite', 'file_replace_line', 'file_insert_lines', 'file_delete_lines'
+                ],
+                'example' => [
+                    'toolName' => 'file_read',
+                    'operations' => [
+                        ['pathAndFilename' => '/path/file1.php'],
+                        ['pathAndFilename' => '/path/file2.php'],
+                        ['pathAndFilename' => '/path/file3.php']
+                    ],
+                    'parallel' => true,
+                    'continueOnError' => true
+                ],
+                'when_to_use' => 'Use bulk_execute when you need to perform 3+ similar file operations'
+            ]
         ];
     }
 }

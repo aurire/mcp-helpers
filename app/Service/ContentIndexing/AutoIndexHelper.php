@@ -130,6 +130,35 @@ class AutoIndexHelper
     }
     
     /**
+     * Remove a file from the search index
+     * Should be called when files are deleted or moved
+     */
+    public static function deleteFromIndex(string $filePath): void
+    {
+        try {
+            // Delete from indexed_files table
+            DB::table('indexed_files')
+                ->where('file_path', $filePath)
+                ->delete();
+            
+            // Delete from search_index table
+            DB::table('search_index')
+                ->where('file_path', $filePath)
+                ->delete();
+            
+            Log::debug('Removed file from index', [
+                'file' => basename($filePath)
+            ]);
+        } catch (\Exception $e) {
+            // Never fail operations due to indexing
+            Log::warning('Failed to remove file from index', [
+                'file' => $filePath,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
      * Calculate the same hash that IndexBuilderService uses
      * (xxh3 of filepath:size:mtime)
      */
