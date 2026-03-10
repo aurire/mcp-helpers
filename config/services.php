@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'model_embedding' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+    ],
+
 ];

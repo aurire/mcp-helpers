@@ -7,9 +7,11 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "hkulekci/qdrant": "^0.5.8",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "nikic/php-parser": "^5.6",
+        "openai-php/client": "^0.19.0",
         "php-mcp/laravel": "^3.1"
     },
     "require-dev": {
